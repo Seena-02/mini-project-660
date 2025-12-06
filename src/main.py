@@ -50,12 +50,13 @@ CONFIG = {
     # VAE configuration
     'vae': {
         'input_dim': 2,
-        'hidden_dims': [128, 128],
-        'latent_dim': 2,
-        'beta': 1.0,
+        'hidden_dim': 256,
+        'latent_dim': 16,
+        'num_layers': 3,
+        'beta': 0.01,  # Very low beta to prevent posterior collapse
         'lr': 1e-3,
-        'n_epochs': 1500,
-        'batch_size': 128,
+        'n_epochs': 3000,
+        'batch_size': 64,
     },
     
     # GAN configuration
@@ -132,11 +133,12 @@ def train_vae(train_data: np.ndarray, val_data: np.ndarray,
     """
     vae_config = config['vae']
     
-    # Create model
+    # Create model with new interface
     model = create_vae(
         input_dim=vae_config['input_dim'],
-        hidden_dims=vae_config['hidden_dims'],
+        hidden_dim=vae_config['hidden_dim'],
         latent_dim=vae_config['latent_dim'],
+        num_layers=vae_config['num_layers'],
         beta=vae_config['beta']
     )
     

@@ -10,15 +10,13 @@
     ],
     "vae": {
       "input_dim": 2,
-      "hidden_dims": [
-        128,
-        128
-      ],
-      "latent_dim": 2,
-      "beta": 1.0,
+      "hidden_dim": 256,
+      "latent_dim": 16,
+      "num_layers": 3,
+      "beta": 0.01,
       "lr": 0.001,
-      "n_epochs": 1500,
-      "batch_size": 128
+      "n_epochs": 3000,
+      "batch_size": 64
     },
     "gan": {
       "input_dim": 2,
@@ -37,30 +35,30 @@
   "metrics": {
     "VAE": {
       "checkerboard": {
-        "log_likelihood": -9972568048.360613,
-        "mmd": 0.6406350115895804,
-        "coverage": 0.016,
-        "density": 0.0
+        "log_likelihood": -1.584953399450937,
+        "mmd": -0.00024823248685301724,
+        "coverage": 0.454,
+        "density": 0.52
       },
       "gaussian_mixture": {
-        "log_likelihood": -10000000000.0,
-        "mmd": 0.6428764021631344,
-        "coverage": 0.0,
-        "density": 0.0
+        "log_likelihood": -0.8368729936314724,
+        "mmd": -0.0004170474729136009,
+        "coverage": 0.362,
+        "density": 0.434
       }
     },
     "GAN": {
       "checkerboard": {
-        "log_likelihood": -1.5236966466531563,
-        "mmd": -0.0015691908690957934,
-        "coverage": 0.504,
-        "density": 0.646
+        "log_likelihood": -1.6402475167342254,
+        "mmd": 0.004081002572326908,
+        "coverage": 0.434,
+        "density": 0.516
       },
       "gaussian_mixture": {
-        "log_likelihood": -0.8005748739793972,
-        "mmd": -0.0018438374028791893,
-        "coverage": 0.41,
-        "density": 0.81
+        "log_likelihood": -0.8034397745539299,
+        "mmd": -0.0014022833402954626,
+        "coverage": 0.398,
+        "density": 0.786
       }
     }
   }

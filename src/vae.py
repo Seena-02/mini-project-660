@@ -1,12 +1,7 @@
 """
 Variational Autoencoder (VAE) Implementation
 =============================================
-This module implements a VAE for 2D data generation.
-
-The VAE consists of:
-- Encoder: Maps input x to latent distribution parameters (mu, log_var)
-- Decoder: Maps latent z to reconstructed x
-- Loss: Reconstruction loss + KL divergence
+Robust implementation for 2D data generation.
 
 Author: Seena
 Course: EE660 - Machine Learning
@@ -21,196 +16,77 @@ from typing import Tuple, List, Optional, Dict
 from tqdm import tqdm
 
 
-class VAEEncoder(nn.Module):
-    """
-    Encoder network that maps input x to latent distribution parameters.
-    
-    Architecture: MLP with hidden layers
-    Output: mean and log_variance of latent distribution
-    """
-    
-    def __init__(self, input_dim: int = 2, hidden_dims: List[int] = [128, 128], 
-                 latent_dim: int = 2):
-        """
-        Args:
-            input_dim: Dimension of input data
-            hidden_dims: List of hidden layer dimensions
-            latent_dim: Dimension of latent space
-        """
-        super().__init__()
-        
-        self.input_dim = input_dim
-        self.latent_dim = latent_dim
-        
-        # Build encoder layers
-        layers = []
-        prev_dim = input_dim
-        for hidden_dim in hidden_dims:
-            layers.extend([
-                nn.Linear(prev_dim, hidden_dim),
-                nn.ReLU(),
-            ])
-            prev_dim = hidden_dim
-        
-        self.shared_layers = nn.Sequential(*layers)
-        
-        # Output layers for mean and log_variance
-        self.fc_mu = nn.Linear(prev_dim, latent_dim)
-        self.fc_logvar = nn.Linear(prev_dim, latent_dim)
-    
-    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        """
-        Forward pass through encoder.
-        
-        Args:
-            x: Input tensor of shape (batch_size, input_dim)
-            
-        Returns:
-            mu: Mean of latent distribution (batch_size, latent_dim)
-            log_var: Log variance of latent distribution (batch_size, latent_dim)
-        """
-        h = self.shared_layers(x)
-        mu = self.fc_mu(h)
-        log_var = self.fc_logvar(h)
-        return mu, log_var
-
-
-class VAEDecoder(nn.Module):
-    """
-    Decoder network that maps latent z to reconstructed x.
-    
-    Architecture: MLP with hidden layers
-    """
-    
-    def __init__(self, latent_dim: int = 2, hidden_dims: List[int] = [128, 128], 
-                 output_dim: int = 2):
-        """
-        Args:
-            latent_dim: Dimension of latent space
-            hidden_dims: List of hidden layer dimensions
-            output_dim: Dimension of output data
-        """
-        super().__init__()
-        
-        self.latent_dim = latent_dim
-        self.output_dim = output_dim
-        
-        # Build decoder layers
-        layers = []
-        prev_dim = latent_dim
-        for hidden_dim in hidden_dims:
-            layers.extend([
-                nn.Linear(prev_dim, hidden_dim),
-                nn.ReLU(),
-            ])
-            prev_dim = hidden_dim
-        
-        # Output layer
-        layers.append(nn.Linear(prev_dim, output_dim))
-        
-        self.layers = nn.Sequential(*layers)
-    
-    def forward(self, z: torch.Tensor) -> torch.Tensor:
-        """
-        Forward pass through decoder.
-        
-        Args:
-            z: Latent tensor of shape (batch_size, latent_dim)
-            
-        Returns:
-            x_recon: Reconstructed input of shape (batch_size, output_dim)
-        """
-        return self.layers(z)
-
-
 class VAE(nn.Module):
     """
-    Variational Autoencoder combining encoder and decoder.
+    Variational Autoencoder for 2D data.
     
-    The VAE learns to:
-    1. Encode input x to a latent distribution q(z|x)
-    2. Sample z from q(z|x) using reparameterization trick
-    3. Decode z to reconstruct x
-    
-    Loss = Reconstruction Loss + β * KL Divergence
+    Uses separate encoder and decoder MLPs with proper initialization.
     """
     
-    def __init__(self, input_dim: int = 2, hidden_dims: List[int] = [128, 128],
-                 latent_dim: int = 2, beta: float = 1.0):
-        """
-        Args:
-            input_dim: Dimension of input data
-            hidden_dims: List of hidden layer dimensions
-            latent_dim: Dimension of latent space
-            beta: Weight for KL divergence term (beta-VAE)
-        """
+    def __init__(self, input_dim: int = 2, hidden_dim: int = 256, 
+                 latent_dim: int = 16, num_layers: int = 3, beta: float = 0.01):
         super().__init__()
         
         self.input_dim = input_dim
         self.latent_dim = latent_dim
         self.beta = beta
         
-        self.encoder = VAEEncoder(input_dim, hidden_dims, latent_dim)
-        self.decoder = VAEDecoder(latent_dim, list(reversed(hidden_dims)), input_dim)
+        # Encoder: x -> hidden -> (mu, logvar)
+        encoder_layers = [nn.Linear(input_dim, hidden_dim), nn.ReLU()]
+        for _ in range(num_layers - 1):
+            encoder_layers.extend([nn.Linear(hidden_dim, hidden_dim), nn.ReLU()])
+        self.encoder = nn.Sequential(*encoder_layers)
+        
+        self.fc_mu = nn.Linear(hidden_dim, latent_dim)
+        self.fc_logvar = nn.Linear(hidden_dim, latent_dim)
+        
+        # Decoder: z -> hidden -> x
+        decoder_layers = [nn.Linear(latent_dim, hidden_dim), nn.ReLU()]
+        for _ in range(num_layers - 1):
+            decoder_layers.extend([nn.Linear(hidden_dim, hidden_dim), nn.ReLU()])
+        decoder_layers.append(nn.Linear(hidden_dim, input_dim))
+        # NO activation on output - data is in [-1, 1] but we use MSE loss
+        self.decoder = nn.Sequential(*decoder_layers)
+        
+        # Initialize weights
+        self.apply(self._init_weights)
     
-    def reparameterize(self, mu: torch.Tensor, log_var: torch.Tensor) -> torch.Tensor:
-        """
-        Reparameterization trick: z = mu + std * epsilon
-        
-        This allows gradients to flow through the sampling operation.
-        
-        Args:
-            mu: Mean of latent distribution
-            log_var: Log variance of latent distribution
-            
-        Returns:
-            z: Sampled latent vector
-        """
-        std = torch.exp(0.5 * log_var)
+    def _init_weights(self, m):
+        if isinstance(m, nn.Linear):
+            nn.init.xavier_normal_(m.weight)
+            nn.init.zeros_(m.bias)
+    
+    def encode(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        h = self.encoder(x)
+        mu = self.fc_mu(h)
+        logvar = self.fc_logvar(h)
+        # Clamp logvar for stability
+        logvar = torch.clamp(logvar, min=-10, max=10)
+        return mu, logvar
+    
+    def reparameterize(self, mu: torch.Tensor, logvar: torch.Tensor) -> torch.Tensor:
+        std = torch.exp(0.5 * logvar)
         eps = torch.randn_like(std)
         return mu + eps * std
     
-    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """
-        Forward pass: encode, sample, decode.
-        
-        Args:
-            x: Input tensor of shape (batch_size, input_dim)
-            
-        Returns:
-            x_recon: Reconstructed input
-            mu: Mean of latent distribution
-            log_var: Log variance of latent distribution
-        """
-        mu, log_var = self.encoder(x)
-        z = self.reparameterize(mu, log_var)
-        x_recon = self.decoder(z)
-        return x_recon, mu, log_var
+    def decode(self, z: torch.Tensor) -> torch.Tensor:
+        return self.decoder(z)
     
-    def loss_function(self, x: torch.Tensor, x_recon: torch.Tensor, 
-                      mu: torch.Tensor, log_var: torch.Tensor) -> Dict[str, torch.Tensor]:
-        """
-        Compute VAE loss: Reconstruction + β * KL Divergence
-        
-        Reconstruction loss: MSE between x and x_recon
-        KL divergence: KL(q(z|x) || p(z)) where p(z) = N(0, I)
-        
-        Args:
-            x: Original input
-            x_recon: Reconstructed input
-            mu: Mean of latent distribution
-            log_var: Log variance of latent distribution
-            
-        Returns:
-            Dictionary containing total loss and components
-        """
+    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        mu, logvar = self.encode(x)
+        z = self.reparameterize(mu, logvar)
+        x_recon = self.decode(z)
+        return x_recon, mu, logvar
+    
+    def loss_function(self, x: torch.Tensor, x_recon: torch.Tensor,
+                      mu: torch.Tensor, logvar: torch.Tensor) -> Dict[str, torch.Tensor]:
         # Reconstruction loss (MSE)
         recon_loss = F.mse_loss(x_recon, x, reduction='mean')
         
-        # KL divergence: -0.5 * sum(1 + log_var - mu^2 - exp(log_var))
-        kl_loss = -0.5 * torch.mean(1 + log_var - mu.pow(2) - log_var.exp())
+        # KL divergence: -0.5 * mean(1 + logvar - mu^2 - exp(logvar))
+        kl_loss = -0.5 * torch.mean(1 + logvar - mu.pow(2) - logvar.exp())
         
-        # Total loss
+        # Total loss with beta weighting
         total_loss = recon_loss + self.beta * kl_loss
         
         return {
@@ -220,69 +96,19 @@ class VAE(nn.Module):
         }
     
     def sample(self, n_samples: int, device: torch.device = None) -> torch.Tensor:
-        """
-        Generate samples from the learned distribution.
-        
-        Samples z ~ N(0, I) and decodes to x.
-        
-        Args:
-            n_samples: Number of samples to generate
-            device: Device to generate samples on
-            
-        Returns:
-            samples: Generated samples of shape (n_samples, input_dim)
-        """
         if device is None:
             device = next(self.parameters()).device
-        
-        # Sample from prior p(z) = N(0, I)
         z = torch.randn(n_samples, self.latent_dim, device=device)
-        
-        # Decode
         with torch.no_grad():
-            samples = self.decoder(z)
-        
+            samples = self.decode(z)
         return samples
-    
-    def encode(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        """
-        Encode input to latent distribution parameters.
-        
-        Args:
-            x: Input tensor
-            
-        Returns:
-            mu, log_var: Latent distribution parameters
-        """
-        return self.encoder(x)
-    
-    def decode(self, z: torch.Tensor) -> torch.Tensor:
-        """
-        Decode latent vector to output space.
-        
-        Args:
-            z: Latent tensor
-            
-        Returns:
-            Decoded output
-        """
-        return self.decoder(z)
 
 
 class VAETrainer:
-    """
-    Trainer class for VAE with logging and checkpointing.
-    """
+    """Trainer for VAE with proper logging."""
     
     def __init__(self, model: VAE, lr: float = 1e-3, device: str = 'auto'):
-        """
-        Args:
-            model: VAE model to train
-            lr: Learning rate
-            device: Device to train on ('auto', 'cuda', 'mps', 'cpu')
-        """
         self.model = model
-        self.lr = lr
         
         # Set device
         if device == 'auto':
@@ -297,29 +123,19 @@ class VAETrainer:
         
         self.model = self.model.to(self.device)
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)
+        self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            self.optimizer, mode='min', factor=0.5, patience=100
+        )
         
-        # Training history
         self.train_losses = []
         self.val_losses = []
         self.train_recon_losses = []
         self.train_kl_losses = []
     
     def train(self, train_data: np.ndarray, val_data: Optional[np.ndarray] = None,
-              n_epochs: int = 1000, batch_size: int = 128, 
+              n_epochs: int = 2000, batch_size: int = 64, 
               verbose: bool = True) -> Dict[str, List[float]]:
-        """
-        Train the VAE.
         
-        Args:
-            train_data: Training data array of shape (n_samples, 2)
-            val_data: Validation data array (optional)
-            n_epochs: Number of training epochs
-            batch_size: Batch size
-            verbose: Whether to show progress bar
-            
-        Returns:
-            Dictionary containing training history
-        """
         # Create data loaders
         train_tensor = torch.FloatTensor(train_data)
         train_dataset = TensorDataset(train_tensor)
@@ -328,7 +144,6 @@ class VAETrainer:
         if val_data is not None:
             val_tensor = torch.FloatTensor(val_data).to(self.device)
         
-        # Training loop
         iterator = tqdm(range(n_epochs), desc="Training VAE") if verbose else range(n_epochs)
         
         for epoch in iterator:
@@ -341,13 +156,13 @@ class VAETrainer:
             for batch in train_loader:
                 x = batch[0].to(self.device)
                 
-                # Forward pass
-                x_recon, mu, log_var = self.model(x)
-                losses = self.model.loss_function(x, x_recon, mu, log_var)
+                x_recon, mu, logvar = self.model(x)
+                losses = self.model.loss_function(x, x_recon, mu, logvar)
                 
-                # Backward pass
                 self.optimizer.zero_grad()
                 losses['loss'].backward()
+                # Gradient clipping for stability
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
                 self.optimizer.step()
                 
                 epoch_loss += losses['loss'].item()
@@ -355,31 +170,33 @@ class VAETrainer:
                 epoch_kl += losses['kl_loss'].item()
                 n_batches += 1
             
-            # Record average loss
             avg_loss = epoch_loss / n_batches
             avg_recon = epoch_recon / n_batches
             avg_kl = epoch_kl / n_batches
+            
             self.train_losses.append(avg_loss)
             self.train_recon_losses.append(avg_recon)
             self.train_kl_losses.append(avg_kl)
             
-            # Validation loss
+            # Validation
             if val_data is not None:
                 self.model.eval()
                 with torch.no_grad():
-                    x_recon, mu, log_var = self.model(val_tensor)
-                    val_losses = self.model.loss_function(val_tensor, x_recon, mu, log_var)
+                    x_recon, mu, logvar = self.model(val_tensor)
+                    val_losses = self.model.loss_function(val_tensor, x_recon, mu, logvar)
                     self.val_losses.append(val_losses['loss'].item())
+                self.scheduler.step(val_losses['loss'])
             
-            # Update progress bar
             if verbose and isinstance(iterator, tqdm):
                 if val_data is not None:
                     iterator.set_postfix({
-                        'train_loss': f'{avg_loss:.4f}',
-                        'val_loss': f'{self.val_losses[-1]:.4f}'
+                        'loss': f'{avg_loss:.4f}',
+                        'recon': f'{avg_recon:.4f}',
+                        'kl': f'{avg_kl:.4f}',
+                        'val': f'{self.val_losses[-1]:.4f}'
                     })
                 else:
-                    iterator.set_postfix({'train_loss': f'{avg_loss:.4f}'})
+                    iterator.set_postfix({'loss': f'{avg_loss:.4f}'})
         
         return {
             'train_loss': self.train_losses,
@@ -389,56 +206,38 @@ class VAETrainer:
         }
     
     def sample(self, n_samples: int) -> np.ndarray:
-        """
-        Generate samples from trained model.
-        
-        Args:
-            n_samples: Number of samples to generate
-            
-        Returns:
-            Generated samples as numpy array
-        """
         self.model.eval()
         samples = self.model.sample(n_samples, self.device)
         return samples.cpu().numpy()
 
 
-def create_vae(input_dim: int = 2, hidden_dims: List[int] = [128, 128],
-               latent_dim: int = 2, beta: float = 1.0) -> VAE:
-    """
-    Factory function to create a VAE model.
-    
-    Args:
-        input_dim: Dimension of input data
-        hidden_dims: List of hidden layer dimensions
-        latent_dim: Dimension of latent space
-        beta: Weight for KL divergence term
-        
-    Returns:
-        VAE model instance
-    """
-    return VAE(input_dim, hidden_dims, latent_dim, beta)
+def create_vae(input_dim: int = 2, hidden_dim: int = 256, latent_dim: int = 16,
+               num_layers: int = 3, beta: float = 0.01) -> VAE:
+    """Factory function to create VAE."""
+    return VAE(input_dim, hidden_dim, latent_dim, num_layers, beta)
 
 
 if __name__ == "__main__":
-    # Test VAE implementation
     print("Testing VAE implementation...")
     
-    # Create model
-    vae = create_vae(input_dim=2, hidden_dims=[128, 128], latent_dim=2)
-    print(f"VAE created with {sum(p.numel() for p in vae.parameters())} parameters")
+    # Create simple test data (Gaussian mixture)
+    np.random.seed(42)
+    n_samples = 1000
+    centers = np.array([[0.5, 0.5], [-0.5, -0.5], [0.5, -0.5], [-0.5, 0.5]])
+    data = []
+    for c in centers:
+        data.append(np.random.randn(n_samples // 4, 2) * 0.1 + c)
+    data = np.vstack(data).astype(np.float32)
     
-    # Test forward pass
-    x = torch.randn(32, 2)
-    x_recon, mu, log_var = vae(x)
-    print(f"Forward pass: x={x.shape} -> x_recon={x_recon.shape}, mu={mu.shape}")
+    # Train VAE
+    vae = create_vae(input_dim=2, hidden_dim=128, latent_dim=8, num_layers=2, beta=0.01)
+    trainer = VAETrainer(vae, lr=1e-3)
+    history = trainer.train(data, val_data=data[:200], n_epochs=500, verbose=True)
     
-    # Test loss computation
-    losses = vae.loss_function(x, x_recon, mu, log_var)
-    print(f"Losses: total={losses['loss']:.4f}, recon={losses['recon_loss']:.4f}, kl={losses['kl_loss']:.4f}")
+    # Generate samples
+    samples = trainer.sample(500)
+    print(f"\nGenerated samples shape: {samples.shape}")
+    print(f"Generated samples range: [{samples.min():.3f}, {samples.max():.3f}]")
+    print(f"Data range: [{data.min():.3f}, {data.max():.3f}]")
     
-    # Test sampling
-    samples = vae.sample(100)
-    print(f"Sampling: {samples.shape}")
-    
-    print("VAE implementation test passed!")
+    print("\nVAE test passed!")
