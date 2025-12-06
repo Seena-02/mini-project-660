@@ -1,0 +1,67 @@
+{
+  "config": {
+    "n_train": 2000,
+    "n_val": 500,
+    "n_test": 500,
+    "random_seed": 42,
+    "datasets": [
+      "checkerboard",
+      "gaussian_mixture"
+    ],
+    "vae": {
+      "input_dim": 2,
+      "hidden_dims": [
+        128,
+        128
+      ],
+      "latent_dim": 2,
+      "beta": 1.0,
+      "lr": 0.001,
+      "n_epochs": 1500,
+      "batch_size": 128
+    },
+    "gan": {
+      "input_dim": 2,
+      "noise_dim": 8,
+      "hidden_dims": [
+        256,
+        256
+      ],
+      "lr_g": 0.0002,
+      "lr_d": 0.0002,
+      "n_epochs": 2000,
+      "batch_size": 128,
+      "n_critic": 1
+    }
+  },
+  "metrics": {
+    "VAE": {
+      "checkerboard": {
+        "log_likelihood": -9972568048.360613,
+        "mmd": 0.6406350115895804,
+        "coverage": 0.016,
+        "density": 0.0
+      },
+      "gaussian_mixture": {
+        "log_likelihood": -10000000000.0,
+        "mmd": 0.6428764021631344,
+        "coverage": 0.0,
+        "density": 0.0
+      }
+    },
+    "GAN": {
+      "checkerboard": {
+        "log_likelihood": -1.5236966466531563,
+        "mmd": -0.0015691908690957934,
+        "coverage": 0.504,
+        "density": 0.646
+      },
+      "gaussian_mixture": {
+        "log_likelihood": -0.8005748739793972,
+        "mmd": -0.0018438374028791893,
+        "coverage": 0.41,
+        "density": 0.81
+      }
+    }
+  }
+}
